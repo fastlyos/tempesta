@@ -112,8 +112,6 @@ tfw_cli_conn_free(TfwCliConn *cli_conn)
 void
 tfw_cli_conn_release(TfwCliConn *cli_conn)
 {
-	del_timer_sync(&cli_conn->timer);
-
 	if (likely(cli_conn->sk))
 		tfw_connection_unlink_to_sk((TfwConn *)cli_conn);
 	if (likely(cli_conn->peer))
@@ -128,9 +126,11 @@ tfw_cli_conn_send(TfwCliConn *cli_conn, TfwMsg *msg)
 	int r;
 
 	r = tfw_connection_send((TfwConn *)cli_conn, msg);
-	mod_timer(&cli_conn->timer,
-		  jiffies +
-		  msecs_to_jiffies((long)tfw_cli_cfg_ka_timeout * 1000));
+
+	if (timer_pending(&cli_conn->timer))
+		mod_timer(&cli_conn->timer,
+		          jiffies +
+		          msecs_to_jiffies((long)tfw_cli_cfg_ka_timeout * 1000));
 
 	if (r)
 		/* Quite usual on system shutdown. */
@@ -234,6 +234,9 @@ tfw_sock_clnt_drop(struct sock *sk)
 
 	T_DBG3("connection lost: close client socket: sk=%p, conn=%p, "
 	       "client=%p\n", sk, conn, conn->peer);
+
+	del_timer_sync(&((TfwCliConn *)conn)->timer);
+
 	/*
 	 * Withdraw from socket activity. Connection is now closed,
 	 * and Tempesta is not called anymore on events in the socket.
